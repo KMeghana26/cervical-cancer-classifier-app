@@ -1,14 +1,14 @@
 """
 ML Assignment 2 - Model training script
-Dataset: Cervical Cancer Risk Factors (UCI)
+Dataset: Breast Cancer Wisconsin (Diagnostic) - via sklearn, no download needed
 Trains 5 classifiers, saves models + scaler, writes test_data.csv and metrics.csv
 """
 import pandas as pd
 import numpy as np
 import joblib
-import urllib.request
 from pathlib import Path
 
+from sklearn.datasets import load_breast_cancer
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
@@ -21,27 +21,22 @@ from sklearn.metrics import (
     recall_score, f1_score, matthews_corrcoef
 )
 
-DATA_PATH = Path("data/cervical_cancer_raw.csv")
-DATA_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/00383/risk_factors_cervical_cancer.csv"
 MODEL_DIR = Path("model")
-TARGET = "Biopsy"
-LEAKAGE_COLS = ["Hinselmann", "Schiller", "Citology"]  # other screening results - drop to avoid leakage
+DATA_PATH = Path("data/breast_cancer_raw.csv")
+TARGET = "Diagnosis"  # 1 = Malignant (Cancer), 0 = Benign (No Cancer)
 
 MODEL_DIR.mkdir(exist_ok=True)
+DATA_PATH.parent.mkdir(exist_ok=True)
 
-if not DATA_PATH.exists():
-    print(f"{DATA_PATH} not found locally - downloading from UCI...")
-    DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
-    urllib.request.urlretrieve(DATA_URL, DATA_PATH)
-    print(f"Downloaded to {DATA_PATH}")
+bunch = load_breast_cancer()
+X = pd.DataFrame(bunch.data, columns=bunch.feature_names)
+# sklearn encodes target as 0=malignant, 1=benign - flip so 1 means "Cancer" (malignant),
+# consistent with the app's "No Cancer" / "Cancer" labeling.
+y = pd.Series(1 - bunch.target, name=TARGET)
 
-df = pd.read_csv(DATA_PATH, na_values="?")
-
-X = df.drop(columns=[TARGET] + LEAKAGE_COLS)
-y = df[TARGET]
-
-X = X.apply(pd.to_numeric, errors="coerce")
-X = X.fillna(X.median())
+full_df = X.copy()
+full_df[TARGET] = y
+full_df.to_csv(DATA_PATH, index=False)
 
 feature_columns = list(X.columns)
 joblib.dump(feature_columns, MODEL_DIR / "feature_columns.pkl")
@@ -96,6 +91,6 @@ for name, (model, needs_scaling) in models.items():
 
 results_df = pd.DataFrame(results)
 results_df.to_csv("metrics.csv", index=False)
-print("\n=== Evaluation Metrics ===")
+print("\n=== Evaluation Metrics Breast cancer ===")
 print(results_df.round(4).to_string(index=False))
 print("\nSaved: test_data.csv, metrics.csv, model/*.pkl, model/scaler.pkl, model/feature_columns.pkl")

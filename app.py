@@ -1,5 +1,5 @@
 """
-ML Assignment 2 - Streamlit app
+Streamlit app
 Loads pre-trained classifiers and evaluates them on an uploaded test CSV.
 No retraining happens here - models are loaded from model/*.pkl.
 """
@@ -18,7 +18,7 @@ from sklearn.metrics import (
 )
 
 MODEL_DIR = Path("model")
-TARGET = "Biopsy"
+TARGET = "Diagnosis"
 CLASS_NAMES = ["No Cancer", "Cancer"]
 
 MODEL_FILES = {
@@ -29,7 +29,7 @@ MODEL_FILES = {
     "Support Vector Machine": ("support_vector_machine.pkl", True),
 }
 
-st.set_page_config(page_title="Cervical Cancer Risk Classifier", page_icon="🩺", layout="wide")
+st.set_page_config(page_title="Breast Cancer Risk Classifier", page_icon="🩺", layout="wide")
 
 feature_columns = joblib.load(MODEL_DIR / "feature_columns.pkl")
 scaler = joblib.load(MODEL_DIR / "scaler.pkl")
@@ -52,7 +52,7 @@ def run_model(name, X, y_true):
     return y_pred, y_proba, metrics
 
 
-st.title("🩺 Cervical Cancer Risk Classification")
+st.title("🩺 Breast Cancer Risk Classification")
 st.caption("Evaluate 5 pre-trained classifiers on your test data — no retraining happens here.")
 
 with st.sidebar:
@@ -63,7 +63,7 @@ with st.sidebar:
     )
     st.markdown("---")
     st.markdown(
-        "**Dataset:** Cervical Cancer Risk Factors (UCI)\n\n"
+        "**Dataset:** Breast Cancer Wisconsin (Diagnostic)\n\n"
         "**Models:** Logistic Regression, Decision Tree, KNN, Naive Bayes, SVM"
     )
 
