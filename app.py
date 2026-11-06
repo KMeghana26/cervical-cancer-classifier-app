@@ -19,6 +19,7 @@ from sklearn.metrics import (
 
 MODEL_DIR = Path("model")
 TARGET = "Biopsy"
+CLASS_NAMES = ["No Cancer", "Cancer"]
 
 MODEL_FILES = {
     "Logistic Regression": ("logistic_regression.pkl", True),
@@ -28,57 +29,106 @@ MODEL_FILES = {
     "Support Vector Machine": ("support_vector_machine.pkl", True),
 }
 
-st.set_page_config(page_title="Cervical Cancer Risk Classifier", layout="centered")
-st.title("Cervical Cancer Risk Classification")
-st.caption("Upload test data, pick a model, and view its evaluation results.")
+st.set_page_config(page_title="Cervical Cancer Risk Classifier", page_icon="🩺", layout="wide")
 
 feature_columns = joblib.load(MODEL_DIR / "feature_columns.pkl")
 scaler = joblib.load(MODEL_DIR / "scaler.pkl")
 
-model_name = st.selectbox("Choose a model", list(MODEL_FILES.keys()))
 
-uploaded_file = st.file_uploader("Upload test CSV (must include all feature columns + 'Biopsy' target)", type="csv")
+def run_model(name, X, y_true):
+    filename, needs_scaling = MODEL_FILES[name]
+    model = joblib.load(MODEL_DIR / filename)
+    X_input = scaler.transform(X) if needs_scaling else X
+    y_pred = model.predict(X_input)
+    y_proba = model.predict_proba(X_input)[:, 1]
+    metrics = {
+        "Accuracy": accuracy_score(y_true, y_pred),
+        "AUC": roc_auc_score(y_true, y_proba),
+        "Precision": precision_score(y_true, y_pred, zero_division=0),
+        "Recall": recall_score(y_true, y_pred, zero_division=0),
+        "F1 Score": f1_score(y_true, y_pred, zero_division=0),
+        "MCC": matthews_corrcoef(y_true, y_pred),
+    }
+    return y_pred, y_proba, metrics
 
-if uploaded_file is not None:
-    data = pd.read_csv(uploaded_file)
 
-    missing_cols = [c for c in feature_columns + [TARGET] if c not in data.columns]
-    if missing_cols:
-        st.error(f"Uploaded CSV is missing required columns: {missing_cols}")
-    else:
-        X = data[feature_columns].apply(pd.to_numeric, errors="coerce")
-        X = X.fillna(X.median())
-        y_true = data[TARGET]
+st.title("🩺 Cervical Cancer Risk Classification")
+st.caption("Evaluate 5 pre-trained classifiers on your test data — no retraining happens here.")
 
-        filename, needs_scaling = MODEL_FILES[model_name]
-        model = joblib.load(MODEL_DIR / filename)
+with st.sidebar:
+    st.header("Input")
+    uploaded_file = st.file_uploader(
+        "Upload test CSV", type="csv",
+        help=f"Must contain all {len(feature_columns)} feature columns plus the '{TARGET}' target column."
+    )
+    st.markdown("---")
+    st.markdown(
+        "**Dataset:** Cervical Cancer Risk Factors (UCI)\n\n"
+        "**Models:** Logistic Regression, Decision Tree, KNN, Naive Bayes, SVM"
+    )
 
-        X_input = scaler.transform(X) if needs_scaling else X
-        y_pred = model.predict(X_input)
-        y_proba = model.predict_proba(X_input)[:, 1]
+if uploaded_file is None:
+    st.info("👈 Upload a test CSV from the sidebar to get started (e.g. the provided `test_data.csv`).")
+    st.stop()
 
-        st.subheader("Evaluation Metrics")
-        metrics = {
-            "Accuracy": accuracy_score(y_true, y_pred),
-            "AUC": roc_auc_score(y_true, y_proba),
-            "Precision": precision_score(y_true, y_pred, zero_division=0),
-            "Recall": recall_score(y_true, y_pred, zero_division=0),
-            "F1 Score": f1_score(y_true, y_pred, zero_division=0),
-            "MCC": matthews_corrcoef(y_true, y_pred),
-        }
-        st.table(pd.DataFrame(metrics, index=[model_name]).round(4))
+data = pd.read_csv(uploaded_file)
+missing_cols = [c for c in feature_columns + [TARGET] if c not in data.columns]
+if missing_cols:
+    st.error(f"Uploaded CSV is missing required columns: {missing_cols}")
+    st.stop()
 
-        st.subheader("Confusion Matrix")
+X = data[feature_columns].apply(pd.to_numeric, errors="coerce")
+X = X.fillna(X.median())
+y_true = data[TARGET]
+
+tab_compare, tab_detail = st.tabs(["📊 Compare All Models", "🔍 Model Deep-Dive"])
+
+with tab_compare:
+    st.subheader("All 5 Models on Uploaded Test Data")
+    rows = []
+    for name in MODEL_FILES:
+        _, _, metrics = run_model(name, X, y_true)
+        rows.append({"Model": name, **metrics})
+    compare_df = pd.DataFrame(rows).set_index("Model").round(4)
+
+    best_model = compare_df["F1 Score"].idxmax()
+    st.dataframe(
+        compare_df.style.highlight_max(axis=0, color="#b7e4c7"),
+        use_container_width=True,
+    )
+    st.success(f"🏆 Best F1 Score on this test set: **{best_model}**")
+
+    st.bar_chart(compare_df[["Accuracy", "AUC", "F1 Score", "MCC"]])
+
+with tab_detail:
+    model_name = st.selectbox("Choose a model to inspect", list(MODEL_FILES.keys()))
+    y_pred, y_proba, metrics = run_model(model_name, X, y_true)
+
+    st.subheader(f"{model_name} — Evaluation Metrics")
+    metric_cols = st.columns(len(metrics))
+    for col, (label, value) in zip(metric_cols, metrics.items()):
+        col.metric(label, f"{value:.3f}")
+
+    col_cm, col_report = st.columns(2)
+
+    with col_cm:
+        st.markdown("**Confusion Matrix**")
         cm = confusion_matrix(y_true, y_pred)
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(4, 3.5))
         sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax,
-                    xticklabels=["No Cancer", "Cancer"], yticklabels=["No Cancer", "Cancer"])
+                    xticklabels=CLASS_NAMES, yticklabels=CLASS_NAMES, cbar=False)
         ax.set_xlabel("Predicted")
         ax.set_ylabel("Actual")
-        st.pyplot(fig)
+        st.pyplot(fig, use_container_width=True)
 
-        st.subheader("Classification Report")
-        report = classification_report(y_true, y_pred, target_names=["No Cancer", "Cancer"])
-        st.text(report)
-else:
-    st.info("Upload a test CSV to see results. You can use the provided test_data.csv.")
+    with col_report:
+        st.markdown("**Classification Report**")
+        report_dict = classification_report(
+            y_true, y_pred, target_names=CLASS_NAMES, output_dict=True
+        )
+        report_df = pd.DataFrame(report_dict).transpose().round(3)
+        report_df = report_df.rename(columns={"support": "Support"})
+        st.dataframe(
+            report_df.style.background_gradient(cmap="Blues", subset=["precision", "recall", "f1-score"]),
+            use_container_width=True,
+        )
